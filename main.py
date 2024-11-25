@@ -6,14 +6,6 @@ from fastapi.responses import HTMLResponse, FileResponse
 
 import uuid
 
-class Participant(BaseModel):
-    name: str
-    team_name: str
-
-class UpdateParticipant(BaseModel):
-    name: Union[str, None] = None
-    team_name: Union[str, None] = None
-
 app = FastAPI()
 
 class Item(BaseModel):
@@ -59,6 +51,13 @@ def read_item(item_id: int, q: Union[str, None] = None):
 ###############-------------------#################
 ###############|VERY COMPLEX CODE|#################
 ###############-------------------################
+class Participant(BaseModel):
+    name: str
+    team_name: str
+
+class UpdateParticipant(BaseModel):
+    name: Union[str, None] = None
+    team_name: Union[str, None] = None
 
 # Function to read the database from db.txt
 def read_db():
