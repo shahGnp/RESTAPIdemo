@@ -1,6 +1,6 @@
 from typing import Union
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, FileResponse
 
@@ -9,6 +9,10 @@ import uuid
 class Participant(BaseModel):
     name: str
     team_name: str
+
+class UpdateParticipant(BaseModel):
+    name: Union[str, None] = None
+    team_name: Union[str, None] = None
 
 app = FastAPI()
 
@@ -51,28 +55,12 @@ def orbit_hackathon():
 def read_item(item_id: int, q: Union[str, None] = None):
     return {"item_id": item_id, "q": q}
 
-# POST request
-@app.post("/items/")
-def create_item(item: Item):
-    return {"msg": "Item created successfully!", "item": item}
 
-# PUT request
-@app.put("/items/{item_id}")
-def update_item(item_id: int, item: Item):
-    return {"msg": "Item updated successfully!", "item_id": item_id, "updated_item": item}
+###############-------------------#################
+###############|VERY COMPLEX CODE|#################
+###############-------------------################
 
-# DELETE Request
-@app.delete("/items/{item_id}")
-def delete_item(item_id: int):
-    return {"msg": f"Item with ID {item_id} deleted successfully!"}
-
-# PATCH Request
-@app.patch("/items/{item_id}")
-def partial_update_item(item_id: int, item: Item):
-    return {"msg": "Item partially updated!", "item_id": item_id, "updated_fields": item.dict(exclude_unset=True)}
-
-
-# More complicated logics
+# Function to read the database from db.txt
 def read_db():
     data = []
     try:
@@ -85,49 +73,89 @@ def read_db():
         pass  # File will be created if it doesn't exist
     return data
 
+# Function to write a new entry to db.txt
 def write_to_db(id_, name, team_name):
     with open('db.txt', 'a') as file:
         file.write(f"{id_} {name} {team_name}\n")
 
-@app.get("/data/")
-def get_data(id: Union[str, None] = None):
-    data = read_db()
-    if id:
+# Function to overwrite the entire db.txt (used for updating or deleting)
+def save_db(data):
+    with open('db.txt', 'w') as file:
         for entry in data:
-            if entry["id"] == id:
-                return {"participant": entry}
-        return {"msg": "Participant not found!"}
-    else:
-        return {"all_data": data}
-    
+            file.write(f"{entry['id']} {entry['name']} {entry['team_name']}\n")
 
-# POST new participant data (handle both JSON and URL parameters)
-@app.post("/data/")
-async def add_participant(request: Request, participant: Union[Participant, None] = None, name: str = None, team_name: str = None):
-    if participant:
-        # If JSON data is sent
-        name = participant.name
-        team_name = participant.team_name
-    else:
-        # If data is sent via URL parameters
-        params = request.query_params
-        if not name or not team_name:
-            name = params.get('name')
-            team_name = params.get('team_name')
+# PUT to update a participant's data completely
+@app.put("/data/")
+async def update_participant(request: Request, id: str, participant: Union[Participant, None] = None, name: str = None, team_name: str = None):
+    # Read existing data
+    data = read_db()
 
-    # Check if name and team_name are available
-    if not name or not team_name:
-        return {"error": "Missing required fields 'name' and 'team_name'!"}
+    # Check if the participant exists
+    for entry in data:
+        if entry["id"] == id:
+            # If JSON data is sent
+            if participant:
+                name = participant.name
+                team_name = participant.team_name
+            else:
+                # If data is sent via URL parameters
+                params = request.query_params
+                name = name or params.get('name')
+                team_name = team_name or params.get('team_name')
 
-    # Generate a unique ID
-    unique_id = str(uuid.uuid4())
-    # Write new participant to the database
-    write_to_db(unique_id, name, team_name)
-    return {
-        "msg": "New participant added successfully!",
-        "participant": {
-            "id": unique_id,
-            "name": name,
-            "team_name": team_name
-        }
-    }
+            if not name or not team_name:
+                raise HTTPException(status_code=400, detail="Both 'name' and 'team_name' are required for PUT request.")
+
+            # Update the participant's data
+            entry["name"] = name
+            entry["team_name"] = team_name
+
+            # Save updated data to the database
+            save_db(data)
+            return {"msg": "Participant data updated successfully!", "participant": entry}
+
+    raise HTTPException(status_code=404, detail="Participant not found!")
+
+# PATCH to update a participant's data partially
+@app.patch("/data/")
+async def partial_update_participant(request: Request, id: str, participant: Union[UpdateParticipant, None] = None, name: str = None, team_name: str = None):
+    # Read existing data
+    data = read_db()
+
+    # Check if the participant exists
+    for entry in data:
+        if entry["id"] == id:
+            # If JSON data is sent
+            if participant:
+                name = participant.name if participant.name else entry["name"]
+                team_name = participant.team_name if participant.team_name else entry["team_name"]
+            else:
+                # If data is sent via URL parameters
+                params = request.query_params
+                name = name or params.get('name', entry["name"])
+                team_name = team_name or params.get('team_name', entry["team_name"])
+
+            # Update the participant's data partially
+            entry["name"] = name
+            entry["team_name"] = team_name
+
+            # Save updated data to the database
+            save_db(data)
+            return {"msg": "Participant data partially updated!", "participant": entry}
+
+    raise HTTPException(status_code=404, detail="Participant not found!")
+
+# DELETE a participant's data
+@app.delete("/data/")
+async def delete_participant(request: Request, id: str = None):
+    # Read existing data
+    data = read_db()
+
+    # Look for the participant by ID
+    for entry in data:
+        if entry["id"] == id:
+            data.remove(entry)  # Remove the entry from the list
+            save_db(data)  # Save the updated list to the database
+            return {"msg": f"Participant with ID {id} deleted successfully!"}
+
+    raise HTTPException(status_code=404, detail="Participant not found!")
