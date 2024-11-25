@@ -8,15 +8,9 @@ import uuid
 
 app = FastAPI()
 
-class Item(BaseModel):
-    name: str
-    description: str = None
-    price: float
-    tax: float = None
-
 @app.get("/")
-def create_item(item: Item):
-    return item
+def home_page():
+    return {'msg':'Hello World! Lets learn some APIs'}
 
 # A Static Path with normal response
 @app.get("/home/orbit/hackathon")
@@ -82,6 +76,49 @@ def save_db(data):
     with open('db.txt', 'w') as file:
         for entry in data:
             file.write(f"{entry['id']} {entry['name']} {entry['team_name']}\n")
+
+# GET all data or specific participant by ID
+@app.get("/data/")
+def get_data(id: Union[str, None] = None):
+    data = read_db()
+    if id:
+        for entry in data:
+            if entry["id"] == id:
+                return {"participant": entry}
+        return {"msg": "Participant not found!"}
+    else:
+        return {"all_data": data}
+    
+# POST new participant data (handle both JSON and URL parameters)
+@app.post("/data/")
+async def add_participant(request: Request, participant: Union[Participant, None] = None, name: str = None, team_name: str = None):
+    if participant:
+        # If JSON data is sent
+        name = participant.name
+        team_name = participant.team_name
+    else:
+        # If data is sent via URL parameters
+        params = request.query_params
+        if not name or not team_name:
+            name = params.get('name')
+            team_name = params.get('team_name')
+
+    # Check if name and team_name are available
+    if not name or not team_name:
+        return {"error": "Missing required fields 'name' and 'team_name'!"}
+
+    # Generate a unique ID
+    unique_id = str(uuid.uuid4())
+    # Write new participant to the database
+    write_to_db(unique_id, name, team_name)
+    return {
+        "msg": "New participant added successfully!",
+        "participant": {
+            "id": unique_id,
+            "name": name,
+            "team_name": team_name
+        }
+    }
 
 # PUT to update a participant's data completely
 @app.put("/data/")
